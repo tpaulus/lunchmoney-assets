@@ -88,7 +88,7 @@ function parseCurrencyStringToFloat(currencyString: string) {
 }
 
 function notEmpty<TValue>(value: TValue | null | undefined): value is TValue {
-    return value !== null && value !== undefined;
+    return value !== null && value !== undefined && value as unknown as string !== "" && !Number.isNaN(value);
 }
 
 dotenv.config();
@@ -173,8 +173,11 @@ for (const [lunchMoneyAssetId, assetMetadata] of Object.entries(assets)) {
       }
     }
 
+    console.log(homeValues);
     let validHomeValues = homeValues.filter(notEmpty)
+    console.log(validHomeValues);
     let averageHomeValue = Math.round(validHomeValues.reduce((a, b) => a + b, 0) / validHomeValues.length);
+    console.log(averageHomeValue);
 
     await updateAssetPrice(parseInt(lunchMoneyAssetId), averageHomeValue);
   } else {
