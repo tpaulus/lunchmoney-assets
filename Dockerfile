@@ -1,11 +1,7 @@
-# TODO this was meant for the pi installation, but I wasn't able to get it working
-
-# Usage:
-#   docker build -t lunchmoney-assets .
-#   docker run --env-file .env -it lunchmoney-assets
-#   docker run --env-file .env -it lunchmoney-assets bash
-
 FROM node:17.1.0
+
+# run every hour by default, use `SCHEDULE=NONE` to run directly
+ENV SCHEDULE "0 * * * *"
 
 # clean eliminates the need to manually `rm -rf` the cache
 RUN set -eux; \
@@ -15,13 +11,12 @@ RUN set -eux; \
     bash \
     nano less \
     chromium chromium-driver \
-    cron; \
+    cron \
+    git; \
   apt-get clean;
 
-# run every hour by default, use `SCHEDULE=NONE` to run directly
-ENV SCHEDULE "0 * * * *"
-
 WORKDIR /app
+RUN mkdir lib; git clone https://github.com/lunch-money/lunch-money-js.git lib/lunch-money;
 COPY . ./
 
 # run after copying source to chache the earlier steps

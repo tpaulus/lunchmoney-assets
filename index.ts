@@ -9,20 +9,13 @@ import dotenv from "dotenv";
 puppeteer.use(StealthPlugin());
 puppeteer.use(PluginREPL());
 
+function isCurrentUserRoot() {
+   return process.getuid() == 0; // UID 0 is always root
+}
+
 async function getBrowser() {
   return await puppeteer.launch({
-    headless: true,
-
-    // TODO this was for trying to debug puppeteer on raspberry pi
-    // dumpio: false,
-    // executablePath: '/usr/bin/chromium',
-    // ignoreHTTPSErrors: true,
-
-    args: [
-      // '--no-sandbox',
-      // '--disable-setuid-sandbox',
-      // "--disable-dev-shm-usage",
-    ],
+    args: isCurrentUserRoot() ? ['--no-sandbox', '--disable-setuid-sandbox'] : ['--disable-setuid-sandbox'],
   });
 }
 
@@ -94,6 +87,10 @@ function parseCurrencyStringToFloat(currencyString: string) {
   return parseFloat(currencyString.replace(/[^0-9.]/g, ""));
 }
 
+function notEmpty<TValue>(value: TValue | null | undefined): value is TValue {
+    return value !== null && value !== undefined;
+}
+
 dotenv.config();
 
 if (!process.env.LUNCH_MONEY_API_KEY) {
@@ -104,11 +101,11 @@ if (!process.env.LUNCH_MONEY_API_KEY) {
 const lunchMoney = new LunchMoney({ token: process.env.LUNCH_MONEY_API_KEY });
 const browser = await getBrowser();
 
-const assets: { [key: string]: { url: string; redfin?: string } } =
+const assets: { [key: string]: { url?: string; redfin?: string } } =
   readJSON("./assets.json");
 
 for (const [lunchMoneyAssetId, assetMetadata] of Object.entries(assets)) {
-  if (assetMetadata.url.includes("kbb.com")) {
+  if (notEmpty(assetMetadata.url) && assetMetadata.url.includes("kbb.com")) {
     // the price data is hidden within a text element of a loaded SVG image
     // first extract the SVG path, then pull the text from it
 
@@ -142,20 +139,25 @@ for (const [lunchMoneyAssetId, assetMetadata] of Object.entries(assets)) {
       parseInt(lunchMoneyAssetId),
       parseCurrencyStringToFloat(kbbPrice)
     );
-  } else if (assetMetadata.url.includes("zillow.com")) {
-    let homeValue;
-    const zillowHomeValue = await extractTextFromXPath(
-      browser,
-      assetMetadata.url,
-      '//*[@id="home-details-home-values"]/div/div[1]/div/div/div[1]/div/p/h3'
-    );
+  } else if ((notEmpty(assetMetadata.url) && assetMetadata.url.includes("zillow.com")) || (notEmpty(assetMetadata.redfin) && assetMetadata.redfin.includes("redfin.com"))) {
+    let homeValues:(number|null)[] = [null, null];
 
-    if (!zillowHomeValue) {
-      console.log(`could not find zillow home value for ${assetMetadata.url}`);
-      continue;
+    // if zillow link provided
+    if (assetMetadata.url) {
+      const zillowHomeValue = await extractTextFromXPath(
+        browser,
+        assetMetadata.url,
+        '//*[@id="home-details-home-values"]/div/div[1]/div/div/div[1]/div/p/h3'
+      );
+
+      if (!zillowHomeValue) {
+        console.log(`could not find zillow home value for ${assetMetadata.url}`);
+      } else {
+        homeValues[0] = parseCurrencyStringToFloat(zillowHomeValue)
+      }
     }
 
-    // if redfin link provided, average out the two of them
+    // if redfin link provided
     if (assetMetadata.redfin) {
       const redfinHomeValue = await extractTextFromXPath(
         browser,
@@ -164,25 +166,17 @@ for (const [lunchMoneyAssetId, assetMetadata] of Object.entries(assets)) {
         '//*[@data-rf-test-id="abp-price"]/div[@class="statsValue"]'
       );
 
-      if (redfinHomeValue) {
-        console.log(`redfin: ${redfinHomeValue}, zillow: ${zillowHomeValue}`);
-
-        homeValue = Math.round(
-          (parseCurrencyStringToFloat(redfinHomeValue) +
-            parseCurrencyStringToFloat(zillowHomeValue)) /
-            2
-        );
+      if (!redfinHomeValue) {
+        console.log(`could not find redfin home value for ${assetMetadata.redfin}`);
       } else {
-        console.log(
-          `could not find redfin home value for ${assetMetadata.redfin}`
-        );
-        homeValue = parseCurrencyStringToFloat(zillowHomeValue);
+        homeValues[1] = parseCurrencyStringToFloat(redfinHomeValue)
       }
-    } else {
-      homeValue = parseCurrencyStringToFloat(zillowHomeValue);
     }
 
-    await updateAssetPrice(parseInt(lunchMoneyAssetId), homeValue);
+    let validHomeValues = homeValues.filter(notEmpty)
+    let averageHomeValue = Math.round(validHomeValues.reduce((a, b) => a + b, 0) / validHomeValues.length);
+
+    await updateAssetPrice(parseInt(lunchMoneyAssetId), averageHomeValue);
   } else {
     console.error("unsupported asset type");
   }

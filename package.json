@@ -11,7 +11,7 @@
   "type": "module",
   "dependencies": {
     "dotenv": "^10.0.0",
-    "lunch-money": "file:~/Projects/lunchmoney/lunch-money-js",
+    "lunch-money": "file:lib/lunch-money",
     "puppeteer-extra-plugin-repl": "^2.3.0",
     "puppeteer-extra-plugin-stealth": "^2.9.0",
     "ts-node": "^10.2.1",
